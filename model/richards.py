@@ -309,9 +309,12 @@ def runRichards(self, meteo, groundwater, currTimeStep):
         
     S0=S0*(1-alpha[nanindexUpp==False])*24*3600 #[J/m^2]; Incoming short wave solar radiation in a day.
     
-    plantevap=np.vstack((actTranspiLow_numpy[nanindexUpp==False], actTranspiUpp_numpy[nanindexUpp==False]+actBareSoilEvap_numpy[nanindexUpp==False]))
-    plantevap=np.array([np.dot(self.layerfractions[:,:,i].T, plantevap[:,i]) for i in range(n1[1])]).T #[m]; Evaporation per layer
-    #DOES THIS NOT TAKE THE WRONG LAYER FRACTIONS??
+    #plantevap=np.vstack((actTranspiLow_numpy[nanindexUpp==False], actTranspiUpp_numpy[nanindexUpp==False]+actBareSoilEvap_numpy[nanindexUpp==False]))
+    #plantevap=np.array([np.dot(self.layerfractions[:,:,i].T, plantevap[:,i]) for i in range(n1[1])]).T #[m]; Evaporation per layer
+    plantevap=np.vstack((actTranspiLow_numpy, actTranspiUpp_numpy+actBareSoilEvap_numpy))
+    plantevap=np.array([np.dot(self.layerfractions[:,:,i].T, plantevap[:,i]) for i in range(self.nCells)]).T #[m]; Evaporation per layer
+    plantevap=plantevap[:,nanindexUpp==False]
+    
     ETpm=plantevap.sum(axis=0) #[m]; Total evaporation per cell
     
     #Added for 3H
