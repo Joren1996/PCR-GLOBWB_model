@@ -1,19 +1,26 @@
 ## Read Me Richards Module PCR-GlobWB2.0
-Bright Minds Project by 
-Joren Janzing\
-g.w.janzing@uu.nl\
+Bright Minds Project 
+
+Joren Janzing; G.W.Janzing@uu.nl\
+dr.ir. Niko Wanders; N.Wanders@uu.nl\
+dr. Edwin Sutanudjaja; E.H.Sutanudjaja@uu.nl
+
+Utrecht University\
 Version: 03-07-2020
 
 ### Content
  - General
  - Updates of Pre-Existing Files
-     - `setup_30min.ini`
+     - `setup_30min_richards.ini`
      - `meteo.py`
      - `landCover.py`
+     - `landSurface.py`
+     - `variable_list.py`
+     - `reporting.py`
  - The New `richards.py` File
      - General
      - Unsaturated Zone: Richards Model
-     - Unsaturated Zone: Temperature and Diffusion Equation
+     - Unsaturated Zone: Heat Function
      - Surface: Energy Balance
  - Variable List
  - Contact
@@ -34,17 +41,24 @@ Files which I have adapted include `setup_30min_seperatefile.ini`, `landCover.py
 
 The main file which has been added is `richards.py`, which includes all relevant functions.
 
+The module is built in Python. Necessary libraries include:
+- *numpy*
+- *scipy*
+- *multiprocessing*
+- *pcraster*
+
+Therefore, in `pcrglobwb_py3.yml` (in `conda_env`), *scipy* is added.
 
 ### Updates of Pre-Existing Files
 
-#### *setup_30min_seperatefile.ini*
+#### *setup_30min_richards.ini*
 In this file the input for the model is provided. This part focusses on the changes with respect to the normal *.ini*-file.
 
 Under `[landSurfaceOptions]`, there are new entries:
  - `includeRichards = True`\
     Boolean: True if you want to include the Richards model (so far only possible if number of soil layers is 2). Model should still be able to run normally if this is not included or set to `False`.
  - `layerFactorRichards = 2`\
-    Integer: number of layers into which the upper and lower soil layer of PCR-GlobWB should be divided.
+    Integer: number of layers into which the upper and lower soil layer of PCR-GlobWB should be divided. **If `layerBoundariesRichards`is used, `layerFactorRichards` needs to be set to 0.**
  - `layerBoundariesRichards = [0, 0.10, 0.30, 0.40, 1.0]`\
     Array [m]; Start with 0 (surface), only one layer between 0.13-0.30m and one between 0.65-1.5m. These ranges are the ranges of thicknesses of the 2 layer unsaturated soil in PCR-GlobWB and make sure that it is easy to switch between the two layer main model and my flexible layer model. **Not used if `layerFactorRichards` is not 0!**
  - `numberOfCoresRichards = 8`\
@@ -60,7 +74,7 @@ Furthermore, under `[meteoOptions]` new paths for netCDF-files to read are added
 - `vaporNC   = ../cru_ts3.21.vap.dat.nc`\
    netCDF file containing near surface vapor pressure over the basin.
 - `sunhoursTable = ../sunhoursfrac.tbl`\
-   Table containing the sunhours fractions.
+   Table containing the fractions of relative sunshine hours given cloud cover.
 
 Note that the model should still be able to run if these are not provided, as long as `includeRichards = False` or not mentioned in the file. 
 
@@ -92,16 +106,16 @@ This part focusses on the changes with respect to the normal `landSurface.py`.
 
 #### *variable_list.py*
 - Extra variables are created for reporting. These new variables are:
-    - `soilTempUpp`: soil temperature of the upper cell in the main model.
-    - `soilTempLow`: soil temperature of the lower cell in the main model.
-    - `tempDeficit_6AM`: difference between skin and air temperature at 6AM.
-    - `tempDeficit_6PM`: difference between skin and air temperature at 6PM.
-    - `netSW`: net short wave radiation.
-    - `netRad`: net incoming radiation (both short and long wave).
-    - `longWaveRad`: outgoing long wave radiation.
-    - `latentHF`: latent heat flux.
-    - `sensibleHF`: sensible heat flux.
-    - `groundHF`: ground heat flux.
+    - `soilTempUpp`: [K] soil temperature of the upper cell in the main model.
+    - `soilTempLow`: [K] soil temperature of the lower cell in the main model.
+    - `tempDeficit_6AM`: [K] difference between skin and air temperature at 6AM.
+    - `tempDeficit_6PM`: [K] difference between skin and air temperature at 6PM.
+    - `netSW`: [W/m^2] net short wave radiation.
+    - `netRad`: [W/m^2] net incoming radiation (both short and long wave).
+    - `longWaveRad`: [W/m^2] outgoing long wave radiation.
+    - `latentHF`: [W/m^2] latent heat flux.
+    - `sensibleHF`: [W/m^2] sensible heat flux.
+    - `groundHF`: [W/m^2] ground heat flux.
     
     
         
@@ -113,10 +127,10 @@ This part focusses on the changes with respect to the normal `landSurface.py`.
 
 ### General
 
-`richard.py` is mainly built in numpy and not in pcraster as the rest of the code. For the most important variables, the reader is referred to the variable list at the end of this document. `richard.py` consists of multiple seperate functions. The main ones are:
+`richards.py` is mainly built in *numpy* and not in *pcraster* as the rest of the code. For the most important variables, the reader is referred to the variable list at the end of this document. `richards.py` consists of multiple seperate functions. The main ones are:
 - `initialiseRichards()`\
    Defines all relevant variables which are used in the rest of the model.\
-   It starts by converting all relevant variables from pcraster to numpy and flatten them, while remembering the original order.\
+   It starts by converting all relevant variables from *pcraster* to *numpy* and flatten them, while remembering the original order.\
    - In the section *MODEL DIMENSIONS*, the spatial and temporal resolution is defined. In general, units are [m] and [day] if not specified. Note that index [0] means the lower most layer and index [-1] is the top layer. 
    - In the section *SOIL CONDITIONS*, the relevant soil conditions are defined. It is tried to retrieve most from the PCRGlobWB model, but for variables not defined, conditions are assumed. Van Genuchten parameters are assumed in the function `GuelphLoamDrying()`. Saturated and residual soil moisture content is taken from the model.
    - In the section *VEGETATION TYPES*, vegetation types can be defined. For now, only the albedo is relevant.
@@ -125,16 +139,17 @@ This part focusses on the changes with respect to the normal `landSurface.py`.
  
 - `runRichards()`\
    Runs the actual model.
-   - In the section *CONVERSION*, the relevant input is converted to numpy.
+   - In the section *CONVERSION*, the relevant input is converted to *numpy*.
    - *INITIALISATION*: Data is flattened, empty arrays are defined. Some cells in the model have nan values, since they might fall outside the basin. The model does not work if these are incorporated. Therefore, `nanindexUpp` is defined to eliminated these. However, the main model still uses these cells and therefore `nanindex` is used to insert nanvalues in these cells in the *POSTPROCESSING* section.
-   - *RUN THE MODEL*: The actual model is run and it exists of two loops: one for the energy balance (predefined to run in steps of 3 hours) and one for the Richards model in larger timesteps. More details on how the energy balance, richards model and temperature equations work in their specific sections.
+   - *RUN THE MODEL*: The actual model is run and it exists of two loops: one for the energy balance (predefined to run in steps of 3 hours) and one for the Richards model in larger timesteps. More details on how the energy balance, Richards model and soil heat function work in their specific sections.
    - *POSTPROCESSING*: The water balance is closed by computing the outgoing percolation. Note that it is first negative, since that is how the model is defined, but later made positive for the PCR-GlobWB model. Futhermore, NaN-values are inserted, the arrays are shaped into the proper dimensions and sizes. In the end, relevant variables are coupled to the landCover object and send to the main model.
+   - In the section *CONVERSION TO PCRASTER*, the relevant output is converted to *pcraster*.
  
 The smaller functions will be explained in the sections on the Richards model, heat function and energy balance.
 
 **Wishlist:**
 
-- Make the model usable for the 3 layer configuration.
+- Make the model usable for the 3 layer configuration in PCR-GlobWB.
 - Make the multiple layers completely flexible (so that the boundaries of the cells do not have to be included in the *ini*-file).
 
 ### Unsaturated Zone: Richards Model
@@ -149,39 +164,39 @@ The model uses the Van Genuchten parameters to compute the hydraulic conductivit
 
 In the end the new matrix potential `psi` is returned to `runRichards()` for time `t[-1]`. With `thetaFun()`, this can be converted to water content.
 
-`fluxModel2()` is basically the same model as `RichardsModel_dz2()`, but only computes and returns the fluxes at the initial model. Note that we therefore only have the fluxes at the beginning and end of the run. Therefore, we do not exactly know how much water has left the soil, and this can only be assessed at the end by assuming the water balance to be closed per definition and computing how much has left the model.
+`fluxModel2()` is basically the same model as `RichardsModel_dz2()`, but only computes and returns the fluxes at one moment. Note that we therefore only have the fluxes at the beginning and end of each run of `RichardsModel_dz2()`. Therefore, we do not exactly know how much water has left the soil, and this can only be assessed at the end by assuming the water balance to be closed per definition and computing how much has left the model.
 
 
 **Main Assumptions:**
 
 - Water Balance is closed by definition. Therefore, all water that is not in any other variable, is put in percolation.
-- Psi can be larger than 0. However, if this happens and the is returned to a water content, the rest of the water is converted to either interflow (bottom layer) or saturation excess (top layer) after `RichardsModel_dz2` is run. Due to this the timestep has some influence on the amount of interflow and saturation excess from the model.
+- Matrix potential `psi` can be larger than 0. However, if this happens and the is returned to a water content, the rest of the water is converted to either interflow (bottom layer) or saturation excess (top layer) after `RichardsModel_dz2` is run. Due to this the timestep has some influence on the amount of interflow and saturation excess from the model.
 - No flow if soil is frozen.
 - There is no interaction between the unsaturated zones of neighbouring cells.
 
 **Wishlist:**
 
 - If the surface is flooded, `psiTop` could be changed automatically to increase infiltration (instead of only having rain).
-- Model is quite slow. It should be faster in a future version.
+- Model is still quite slow and could be made faster in a future version.
 
 
 ### Unsaturated Zone: Heat Function
 
 The main function for this model is `heatFun3()`. It solves for the soil temperature and also uses `scipy.odeint()` to compute the new state. However, since it stabilises much faster than `RichardsModel_dz2`, there is no need for multiprocessing and the maximum allowed number of steps can be low (now set to 1000, but can be lower).
 
-Based on the fraction of water in the soil the thermal conductivity (`ThermalConduct()`) and heat capacity (`heatcapacity1()`)is computed for the soil layers. Note that it is assumed that the soil part consists of dry sand for the heat capacity. Furthermore, if it freezes the heat capacity and thermal conductivity of ice is used for the water fraction, which is fixed as of now.
+Based on the fraction of water in the soil the thermal conductivity (`ThermalConduct()`) and heat capacity (`heatcapacity1()`)is computed for the soil layers. Note that it is assumed that the soil part consists of dry sand when computing the heat capacity. Furthermore, if it freezes the heat capacity and thermal conductivity of ice is used for the water fraction, which is fixed as of now.
 
 **Main Assumptions**:
 
-- Top layer has the skin temperature. It does not change its temperature.
-- Bottom layer temperature is fixed in the calculation. However, at the end, it receives the same dTdt as the layer just above it, in order to change through time.
+- Top layer has the skin temperature. It does not change its soil temperature during the run of the heat function.
+- Bottom layer soil temperature is fixed in the calculation. However, at the end, it receives the same dTdt as the layer just above it, in order to change through time.
 - Advective fluxes are computed from the state at the end of the previous run of `RichardsModel_dz2`. However, the real fluxes deviate probably a small amount from this.
 
 
 **Wishlist**:
 
- - Temperature should be influenced by the energy released from freezing or melting.
- - Bottom layer temperature should change by itself.
+ - Soil temperature should be influenced by the energy released from freezing or melting.
+ - The soil temperature in the bottom layer should change by itself, instead of following the layer above it.
  - Small correction could be done to the moisture content if it freezes, since ice has a different density. This could have some influence on the conductivity.
 
 
@@ -189,28 +204,30 @@ Based on the fraction of water in the soil the thermal conductivity (`ThermalCon
 
 ### Surface: Energy Balance
 
-The surface energy balance is closed by means of the Newton-Raphson method. For this, `scipy.optimize.newton()` is used and the functions `radiation_f2()` (computes how much energy is unacounted for in the energy balance) and the `radiation_deriv2()` (computes the derivative with respect to the skin temperatures). This is very fast, so no multiprocessing is needed (now `mxiter=150`).
+By using the Newton-Raphson method, the skin temperature is in such a way that the suface energy balance is closed. For this, `scipy.optimize.newton()` is used and the functions `radiation_f2()` (computes how much energy is unacounted for in the energy balance) and the `radiation_deriv2()` (computes the derivative with respect to the skin temperatures). This is very fast, so no multiprocessing is needed (now `mxiter=150`).
 
-The actual fluxes are computed in the function `ComputeFluxes2()`. The latent heat flux is taken from the evapotranspiration computed by the original PCR GlobWB model itself and the incoming short wave radiation from the input netCDF files. Longwave radiation (`longWave_out2()`: based on cloudfraction and relative humidity), the sensible heatflux (`computeH()`) and the ground heatflux are computed (`GFlux()`).
+The actual fluxes are computed in the function `ComputeFluxes2()`. The latent heat flux is taken from the actual evapotranspiration computed by the original PCR GlobWB model itself (bare soil evaporation and soil transpiration). It is not changed during the solution of the energy balance. The incoming short wave radiation is taken from input netCDF files. Longwave radiation (`longWave_out2()`: based on cloudfraction and relative humidity), the sensible heatflux (`computeH()`) and the ground heatflux are computed (`GFlux()`).
 
 Fluxes are positive away from the surface. Only the incoming short wave radiation is positive towards the surface.
 
-**Assumptions**
+**Main Assumptions**
 
 - There is no melting or snow.
-- Since latent heat is taken from the PCR GlobWB model, there is no dependence on the other variables of the energy balance.
+- Since latent heat is taken from the actual evapotranspiration in the PCR GlobWB model, there is no dependence on the other variables of the energy balance.
 - `GFlux()` uses the full depth of the first layer to compare the skin temperature against (based on equations in the literature and fitted to the Cabauw data). It further assumes that the heatflux at that depth is neglible over the times step (dG/dz=(G(top)-0)/dz)
-- The aerodynamical resistance  `ra` in `computeH()` taken as constant. 
-- A fixed daily cycle is assumed: `Tair_list` assumes deviations from the mean temperature during the day and `SW_fractions` devides the incoming solar radiation over the cells.
+- The aerodynamic resistance  `ra` in `computeH()` taken as constant. 
+- A fixed daily cycle is assumed: `Tair_list` assumes deviations from the mean air temperature during the day and `SW_fractions` devides the incoming solar radiation over the cells.
 - Incoming shortwave radiation is not affected by cloud cover.
 
 **Wishlist:**
 
+- Time step size of the energy balance could be given in the *ini*-file.
 - `ComputeFluxes2()` is now called double. It is very fast, so it does not take time but this could be made more efficient in a future model. 
 - Energy used for melting should be included in the energy balance.
 - Snow layer albedo should be coupled in the energy balance. Now, always the albedo of grass is used.
 - The energy balance could be decoupled from the Richards equation, so it can also be used in the normal model.
-- Make the aerodynamical resistance `ra` a function of soil cover and wind.
+- Make the aerodynamic resistance `ra` a function of soil cover and wind.
+- A larger variety and a higher resolution meteorological input could be used in the future.
 
 
 
@@ -255,10 +272,10 @@ List of the most important variables.
 | `nanindexLow` |   |Array: indices where the storage array is NaN in the lower layer.|
 | `nanindex` |   |Array: indices where to insert nanvalues later (is different that `nanindexUpp`).|
 | `n1` |   |Tuple: same as `n` but corrected for NaN values.|
-| `ra` |   |Integer: aerodynamic resistance.|
+| `ra` | [s/m]  |Integer: aerodynamic resistance.|
 | `RH` |   |Array: relative humidity.|
-| `plantevap` |  [m] |Array: total evaporation per layer.|
-| `ETpm` |  [m] |Array: total evaporation per cell.|
+| `plantevap` |  [m] |Array: total evaportranspiration per layer.|
+| `ETpm` |  [m] |Array: total evapotranspiration per cell.|
 | `theta0` |   |Array: initial water content per day.|
 | `excess` | [m]  |Array: saturation excess and interflow together (from oversaturated layers).|
 | `oversaturated` |   |Array: indices of oversaturated layers.|
@@ -292,6 +309,14 @@ List of the most important variables.
                                 
 
 ### Contact
-If anything is unclear and questions remain, please contact me by email: g.w.janzing@uu.nl.
-Furthermore, if desired, multiple older versions of the code can be send as well (e.g. for Raam network data or Cabauw data in the Netherlands).
+If anything is unclear and questions remain, please contact one of the following by email: 
+
+- Joren Janzing\
+  G.W.Janzing@uu.nl
+- dr.ir. Niko Wanders\
+  N.Wanders@uu.nl
+- dr. Edwin Sutanudjaja\
+  E.H.Sutanudjaja@uu.nl
+
+Furthermore, if desired, multiple older versions of the code can be send as well (e.g. for data from the Raam network or Cabauw in the Netherlands, which are not coupled to the PCR-GlobWB model).
 
