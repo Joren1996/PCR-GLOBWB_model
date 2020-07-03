@@ -185,9 +185,23 @@ class LandSurface(object):
         # specific variables for 2 and 3 layer soil models:
         #
         if self.numberOfSoilLayers == 2:
+# =============================================================================
+#             self.mainStates += ['storUpp','storLow']
+#             self.stateVars  += self.mainStates
+#             self.fluxVars   += ['actTranspiUpp','actTranspiLow','netPercUpp']
+# =============================================================================
+            #%%CHANGED BY JOREN: START
             self.mainStates += ['storUpp','storLow']
             self.stateVars  += self.mainStates
             self.fluxVars   += ['actTranspiUpp','actTranspiLow','netPercUpp']
+            self.includeRichards = False
+            if "includeRichards" in list(iniItems.landSurfaceOptions.keys()):
+                self.includeRichards = bool(iniItems.landSurfaceOptions['includeRichards'])
+            if self.includeRichards:
+                self.richVars=['soilTempUpp','soilTempLow', 'sensibleHF', 'longWaveRad', 'latentHF', 'groundHF', 'netRad', 'netSW', 'tempDeficit_6AM','tempDeficit_6PM']
+                self.fluxVars+=self.richVars
+            #%%CHANGED BY JOREN: STOP
+        
         #                                                      
         if self.numberOfSoilLayers == 3:
             self.mainStates += ['storUpp000005',  'storUpp005030',  'storLow030150']

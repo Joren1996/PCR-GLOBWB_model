@@ -618,6 +618,25 @@ class Reporting(object):
         
         self.infiltration         = self._model.landSurface.infiltration
         self.gwRecharge           = self._model.landSurface.gwRecharge
+        #%% ADDED BY JOREN: START
+        #self.includeRichards = False
+        #if "includeRichards" in list(iniItems.landSurfaceOptions.keys()):
+        #    self.includeRichards = bool(iniItems.landSurfaceOptions['includeRichards'])
+        self.includeRichards=self._model.landSurface.includeRichards
+        if self.includeRichards:
+            self.soilTempUpp          = self._model.landSurface.soilTempUpp
+            self.soilTempLow          = self._model.landSurface.soilTempLow
+            self.netRad               = self._model.landSurface.netRad
+            self.netSW                = self._model.landSurface.netSW
+            self.longWaveRad          = self._model.landSurface.longWaveRad
+            self.latentHF             = self._model.landSurface.latentHF
+            self.sensibleHF           = self._model.landSurface.sensibleHF
+            self.groundHF             = self._model.landSurface.groundHF
+            self.tempDeficit_6AM      = self._model.landSurface.tempDeficit_6AM
+            self.tempDeficit_6PM      = self._model.landSurface.tempDeficit_6PM
+        #%% ADDED BY JOREN: STOP
+        
+        
         self.gwNetCapRise         = pcr.ifthenelse(self._model.landSurface.gwRecharge < 0.0, self.gwRecharge*(-1.0), 0.0)
         
         # water demand (m)

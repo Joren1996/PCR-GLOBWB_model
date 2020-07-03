@@ -34,6 +34,8 @@ logger = logging.getLogger(__name__)
 import virtualOS as vos
 from ncConverter import *
 
+import richards as ri
+
 class LandCover(object):
 
     def __init__(self,iniItems,nameOfSectionInIniFile,soil_and_topo_parameters,landmask,irrigationEfficiency,usingAllocSegments = False):
@@ -46,7 +48,22 @@ class LandCover(object):
         
         # number of soil layers:
         self.numberOfSoilLayers = int(iniItems.landSurfaceOptions['numberOfUpperSoilLayers'])
-
+        
+        #%%ADDED BY JOREN: START
+        self.includeRichards = False
+        if "includeRichards" in list(iniItems.landSurfaceOptions.keys()):
+            self.includeRichards = bool(iniItems.landSurfaceOptions['includeRichards'])
+        if self.includeRichards:
+            import numpy as np
+            self.layerFactorRichards = int(iniItems.landSurfaceOptions['layerFactorRichards'])
+            self.layerBoundariesRichards=iniItems.landSurfaceOptions['layerBoundariesRichards']
+            self.layerBoundariesRichards=self.layerBoundariesRichards.replace("[","")
+            self.layerBoundariesRichards=self.layerBoundariesRichards.replace("]","")
+            self.layerBoundariesRichards=np.array([float(v) for v in self.layerBoundariesRichards.split(',')])
+            self.numberOfCoresRichards = int(iniItems.landSurfaceOptions['numberOfCoresRichards'])   
+            self.timestepRichards = int(iniItems.landSurfaceOptions['timestepRichards'])
+        #%%ADDED BY JOREN: STOP
+        
         # soil and topo parameters
         self.parameters = soil_and_topo_parameters
         
@@ -925,7 +942,11 @@ class LandCover(object):
                 else:
                     vars(self)[var] = iniConditions[str(var)]
                 vars(self)[var] = pcr.ifthen(self.landmask,vars(self)[var])
-
+         #%% ADDED BY JOREN: START
+        if self.includeRichards:
+                ri.initialiseRichards(self)
+        #%% ADDED BY JOREN: STOP
+            
     def updateLC(self,meteo,groundwater,routing,\
                  capRiseFrac,\
                  nonIrrGrossDemandDict,swAbstractionFractionDict,\
@@ -3381,79 +3402,91 @@ class LandCover(object):
             self.capRiseUpp000005 = pcr.min(\
                                     estimateStorUpp005030BeforeCapRise,self.capRiseUpp000005)
 
-    def updateSoilStates(self):
-
+    #def updateSoilStates(self):
+    #%%ADDED BY JOREN: START
+    def updateSoilStates(self, *args):
+    #%%ADDED BY JOREN: STOP
         # We give new states and make sure that no storage capacities will be exceeded.
         #################################################################################
         
         if self.numberOfLayers == 2:
+            #%% ADDED BY JOREN: START
+            if self.includeRichards:
+                meteo=args[0]
+                groundwater=args[1]
+                currTimeStep=args[2]
+                ri.runRichards(self, meteo, groundwater, currTimeStep)
+            else:
+            #%% ADDED BY JOREN: STOP
             
-            # update storLow after the following fluxes: 
-            # + percUpp
-            # + capRiseLow
-            # - percLow
-            # - interflow
-            # - actTranspiLow
-            # - capRiseUpp
-            #
-            self.storLow = pcr.max(0., self.storLow + \
-                                       self.percUpp + \
-                                       self.capRiseLow - \
-                       (self.percLow + self.interflow + \
-                                       self.actTranspiLow +\
-                                       self.capRiseUpp))                    # S2_L[TYPE]= max(0,S2_L[TYPE]+P1_L[TYPE]+CR2_L[TYPE]-
-                                                                            #             (P2_L[TYPE]+Q2_L[TYPE]+CR1_L[TYPE]+T_a2[TYPE]));          
-            #
-            # If necessary, reduce percolation input:
-            percUpp      = self.percUpp
-            
-            if self.allowNegativePercolation:
-                # this is as defined in the original oldcalc script of Rens 
-                self.percUpp = percUpp - \
-                                 pcr.max(0.,self.storLow - \
-                                 self.parameters.storCapLow)                
-                                                                            # Rens's line: P1_L[TYPE] = P1_L[TYPE]-max(0,S2_L[TYPE]-SC2[TYPE]);
-                                                                            # PS: In the original Rens's code, P1 can be negative.
-            else:                                                                 
-                # alternative, proposed by Edwin: avoid negative percolation
-                self.percUpp = pcr.max(0., percUpp - \
-                               pcr.max(0.,self.storLow - \
-                                     self.parameters.storCapLow))                    
-                self.storLow = self.storLow -  percUpp + \
-                                          self.percUpp     
-                # If necessary, reduce capRise input:
-                capRiseLow      = self.capRiseLow
-                self.capRiseLow = pcr.max(0.,capRiseLow - \
-                                  pcr.max(0.,self.storLow - \
-                                           self.parameters.storCapLow))
-                self.storLow    = self.storLow - capRiseLow + \
-                                            self.capRiseLow      
-                # If necessary, increase interflow outflow:
-                addInterflow          = pcr.max(0.,\
-                            self.storLow - self.parameters.storCapLow)
-                self.interflow       += addInterflow
-                self.storLow         -= addInterflow      
+                
+                # update storLow after the following fluxes: 
+                # + percUpp
+                # + capRiseLow
+                # - percLow
+                # - interflow
+                # - actTranspiLow
+                # - capRiseUpp
                 #
-                self.storLow = pcr.min(self.storLow, self.parameters.storCapLow) 
-        
-            #
-            # update storUpp after the following fluxes: 
-            # + infiltration
-            # + capRiseUpp
-            # - percUpp
-            # - actTranspiUpp
-            # - actBareSoilEvap
-            #
-            self.storUpp = pcr.max(0.,self.storUpp + \
-                                      self.infiltration + \
-                                      self.capRiseUpp - \
-                                     (self.percUpp + \
-                 self.actTranspiUpp + self.actBareSoilEvap))                # Rens's line:  S1_L[TYPE]= max(0,S1_L[TYPE]+P0_L[TYPE]+CR1_L[TYPE]-
-                                                                            #              (P1_L[TYPE]+T_a1[TYPE]+ES_a[TYPE])); #*
-            #
-            # any excess above storCapUpp is handed to topWaterLayer
-            self.satExcess = pcr.max(0.,self.storUpp - \
-                               self.parameters.storCapUpp)                                  
+                self.storLow = pcr.max(0., self.storLow + \
+                                           self.percUpp + \
+                                           self.capRiseLow - \
+                           (self.percLow + self.interflow + \
+                                           self.actTranspiLow +\
+                                           self.capRiseUpp))                    # S2_L[TYPE]= max(0,S2_L[TYPE]+P1_L[TYPE]+CR2_L[TYPE]-
+                                                                                #             (P2_L[TYPE]+Q2_L[TYPE]+CR1_L[TYPE]+T_a2[TYPE]));          
+                #
+                # If necessary, reduce percolation input:
+                percUpp      = self.percUpp
+                
+                if self.allowNegativePercolation:
+                    # this is as defined in the original oldcalc script of Rens 
+                    self.percUpp = percUpp - \
+                                     pcr.max(0.,self.storLow - \
+                                     self.parameters.storCapLow)                
+                                                                                # Rens's line: P1_L[TYPE] = P1_L[TYPE]-max(0,S2_L[TYPE]-SC2[TYPE]);
+                                                                                # PS: In the original Rens's code, P1 can be negative.
+                else:                                                                 
+                    # alternative, proposed by Edwin: avoid negative percolation
+                    self.percUpp = pcr.max(0., percUpp - \
+                                   pcr.max(0.,self.storLow - \
+                                         self.parameters.storCapLow))                    
+                    self.storLow = self.storLow -  percUpp + \
+                                              self.percUpp     
+                    # If necessary, reduce capRise input:
+                    capRiseLow      = self.capRiseLow
+                    self.capRiseLow = pcr.max(0.,capRiseLow - \
+                                      pcr.max(0.,self.storLow - \
+                                               self.parameters.storCapLow))
+                    self.storLow    = self.storLow - capRiseLow + \
+                                                self.capRiseLow      
+                    # If necessary, increase interflow outflow:
+                    addInterflow          = pcr.max(0.,\
+                                self.storLow - self.parameters.storCapLow)
+                    self.interflow       += addInterflow
+                    self.storLow         -= addInterflow      
+                    #
+                    self.storLow = pcr.min(self.storLow, self.parameters.storCapLow) 
+            
+                #
+                # update storUpp after the following fluxes: 
+                # + infiltration
+                # + capRiseUpp
+                # - percUpp
+                # - actTranspiUpp
+                # - actBareSoilEvap
+                #
+                self.storUpp = pcr.max(0.,self.storUpp + \
+                                          self.infiltration + \
+                                          self.capRiseUpp - \
+                                         (self.percUpp + \
+                     self.actTranspiUpp + self.actBareSoilEvap))                # Rens's line:  S1_L[TYPE]= max(0,S1_L[TYPE]+P0_L[TYPE]+CR1_L[TYPE]-
+                    
+                self.satExcess = pcr.max(0.,self.storUpp - \
+                               self.parameters.storCapUpp)                                                                #              (P1_L[TYPE]+T_a1[TYPE]+ES_a[TYPE])); #*
+                #
+                # any excess above storCapUpp is handed to topWaterLayer
+                                              
             self.topWaterLayer =  self.topWaterLayer + self.satExcess
         
             # any excess above minTopWaterLayer is released as directRunoff                               
@@ -3701,7 +3734,11 @@ class LandCover(object):
             self.scaleAllFluxes(groundwater)
 
         # update all soil states (including get final/corrected fluxes) 
-        self.updateSoilStates()
+        #%%CHANGED BY JOREN: START
+        #self.updateSoilStates()
+        self.preStorUpp=preStorUpp
+        self.updateSoilStates(meteo, groundwater, currTimeStep)
+        #%%CHANGED BY JOREN: STOP
 
         # reporting irrigation transpiration deficit
         self.irrigationTranspirationDeficit = 0.0

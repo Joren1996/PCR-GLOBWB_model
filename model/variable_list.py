@@ -373,6 +373,130 @@ comment[pcrglobwb_variable_name]           = "negative values indicating (net) c
 latex_symbol[pcrglobwb_variable_name]      = None
 pcr_short_name[pcrglobwb_variable_name]    = "rch"
 
+#ADDED BY JOREN: START
+# SoilTempUpp                      
+pcrglobwb_variable_name = 'soilTempUpp'
+netcdf_short_name[pcrglobwb_variable_name] = 'soil_temperature_upp'
+netcdf_unit[pcrglobwb_variable_name]       = 'K'
+netcdf_monthly_total_unit[pcrglobwb_variable_name] = 'K' 
+netcdf_yearly_total_unit[pcrglobwb_variable_name]  = 'K'
+netcdf_long_name[pcrglobwb_variable_name]  = None
+description[pcrglobwb_variable_name]       = None
+comment[pcrglobwb_variable_name]           = None 
+latex_symbol[pcrglobwb_variable_name]      = None
+pcr_short_name[pcrglobwb_variable_name]    = "stu"
+
+# SoilTempLow                      
+pcrglobwb_variable_name = 'soilTempLow'
+netcdf_short_name[pcrglobwb_variable_name] = 'soil_temperature_low'
+netcdf_unit[pcrglobwb_variable_name]       = 'K'
+netcdf_monthly_total_unit[pcrglobwb_variable_name] = 'K' 
+netcdf_yearly_total_unit[pcrglobwb_variable_name]  = 'K'
+netcdf_long_name[pcrglobwb_variable_name]  = None
+description[pcrglobwb_variable_name]       = None
+comment[pcrglobwb_variable_name]           = None 
+latex_symbol[pcrglobwb_variable_name]      = None
+pcr_short_name[pcrglobwb_variable_name]    = "stl"
+
+# TempDeficit_6AM                     
+pcrglobwb_variable_name = 'tempDeficit_6AM'
+netcdf_short_name[pcrglobwb_variable_name] = 'temp_deficit_6AM'
+netcdf_unit[pcrglobwb_variable_name]       = 'K'
+netcdf_monthly_total_unit[pcrglobwb_variable_name] = 'K' 
+netcdf_yearly_total_unit[pcrglobwb_variable_name]  = 'K'
+netcdf_long_name[pcrglobwb_variable_name]  = None
+description[pcrglobwb_variable_name]       = None
+comment[pcrglobwb_variable_name]           = None 
+latex_symbol[pcrglobwb_variable_name]      = None
+pcr_short_name[pcrglobwb_variable_name]    = "td6am"
+
+# TempDeficit_6PM                     
+pcrglobwb_variable_name = 'tempDeficit_6PM'
+netcdf_short_name[pcrglobwb_variable_name] = 'temp_deficit_6PM'
+netcdf_unit[pcrglobwb_variable_name]       = 'K'
+netcdf_monthly_total_unit[pcrglobwb_variable_name] = 'K' 
+netcdf_yearly_total_unit[pcrglobwb_variable_name]  = 'K'
+netcdf_long_name[pcrglobwb_variable_name]  = None
+description[pcrglobwb_variable_name]       = None
+comment[pcrglobwb_variable_name]           = None 
+latex_symbol[pcrglobwb_variable_name]      = None
+pcr_short_name[pcrglobwb_variable_name]    = "td6pm"
+
+# Long Wave Radiation                      
+pcrglobwb_variable_name = 'longWaveRad'
+netcdf_short_name[pcrglobwb_variable_name] = 'long_wave_rad'
+netcdf_unit[pcrglobwb_variable_name]       = 'W/m^2'
+netcdf_monthly_total_unit[pcrglobwb_variable_name] = 'J.month-1' 
+netcdf_yearly_total_unit[pcrglobwb_variable_name]  = 'J.year-1'
+netcdf_long_name[pcrglobwb_variable_name]  = None
+description[pcrglobwb_variable_name]       = None
+comment[pcrglobwb_variable_name]           = None #"negative values indicating (net) capillary rise from groundater store ; not including infiltration from surface water bodies"
+latex_symbol[pcrglobwb_variable_name]      = None
+pcr_short_name[pcrglobwb_variable_name]    = "lwr"
+
+# Sensible Heat Flux                      
+pcrglobwb_variable_name = 'sensibleHF'
+netcdf_short_name[pcrglobwb_variable_name] = 'sensible_HF'
+netcdf_unit[pcrglobwb_variable_name]       = 'W/m^2'
+netcdf_monthly_total_unit[pcrglobwb_variable_name] = 'J.month-1' 
+netcdf_yearly_total_unit[pcrglobwb_variable_name]  = 'J.year-1'
+netcdf_long_name[pcrglobwb_variable_name]  = None
+description[pcrglobwb_variable_name]       = None
+comment[pcrglobwb_variable_name]           = None #"negative values indicating (net) capillary rise from groundater store ; not including infiltration from surface water bodies"
+latex_symbol[pcrglobwb_variable_name]      = None
+pcr_short_name[pcrglobwb_variable_name]    = "shf"
+
+# Ground Heat Flux                      
+pcrglobwb_variable_name = 'groundHF'
+netcdf_short_name[pcrglobwb_variable_name] = 'ground_HF'
+netcdf_unit[pcrglobwb_variable_name]       = 'W/m^2'
+netcdf_monthly_total_unit[pcrglobwb_variable_name] = 'J.month-1' 
+netcdf_yearly_total_unit[pcrglobwb_variable_name]  = 'J.year-1'
+netcdf_long_name[pcrglobwb_variable_name]  = None
+description[pcrglobwb_variable_name]       = None
+comment[pcrglobwb_variable_name]           = None #"negative values indicating (net) capillary rise from groundater store ; not including infiltration from surface water bodies"
+latex_symbol[pcrglobwb_variable_name]      = None
+pcr_short_name[pcrglobwb_variable_name]    = "ghf"
+
+# Latent Heat Flux                      
+pcrglobwb_variable_name = 'latentHF'
+netcdf_short_name[pcrglobwb_variable_name] = 'latent_HF'
+netcdf_unit[pcrglobwb_variable_name]       = 'W/m^2'
+netcdf_monthly_total_unit[pcrglobwb_variable_name] = 'J.month-1' 
+netcdf_yearly_total_unit[pcrglobwb_variable_name]  = 'J.year-1'
+netcdf_long_name[pcrglobwb_variable_name]  = None
+description[pcrglobwb_variable_name]       = None
+comment[pcrglobwb_variable_name]           = None #"negative values indicating (net) capillary rise from groundater store ; not including infiltration from surface water bodies"
+latex_symbol[pcrglobwb_variable_name]      = None
+pcr_short_name[pcrglobwb_variable_name]    = "lhf"
+
+# Net Short Wave                      
+pcrglobwb_variable_name = 'netSW'
+netcdf_short_name[pcrglobwb_variable_name] = 'net_SW'
+netcdf_unit[pcrglobwb_variable_name]       = 'W/m^2'
+netcdf_monthly_total_unit[pcrglobwb_variable_name] = 'J.month-1' 
+netcdf_yearly_total_unit[pcrglobwb_variable_name]  = 'J.year-1'
+netcdf_long_name[pcrglobwb_variable_name]  = None
+description[pcrglobwb_variable_name]       = None
+comment[pcrglobwb_variable_name]           = None #"negative values indicating (net) capillary rise from groundater store ; not including infiltration from surface water bodies"
+latex_symbol[pcrglobwb_variable_name]      = None
+pcr_short_name[pcrglobwb_variable_name]    = "nSW"
+
+# Net Radiation                      
+pcrglobwb_variable_name = 'netRad'
+netcdf_short_name[pcrglobwb_variable_name] = 'net_Rad'
+netcdf_unit[pcrglobwb_variable_name]       = 'W/m^2'
+netcdf_monthly_total_unit[pcrglobwb_variable_name] = 'J.month-1' 
+netcdf_yearly_total_unit[pcrglobwb_variable_name]  = 'J.year-1'
+netcdf_long_name[pcrglobwb_variable_name]  = None
+description[pcrglobwb_variable_name]       = None
+comment[pcrglobwb_variable_name]           = None #"negative values indicating (net) capillary rise from groundater store ; not including infiltration from surface water bodies"
+latex_symbol[pcrglobwb_variable_name]      = None
+pcr_short_name[pcrglobwb_variable_name]    = "nRad"
+
+#ADDED BY JOREN: STOP
+
+
 # gwNetCapRise                      
 pcrglobwb_variable_name = 'gwNetCapRise'
 netcdf_short_name[pcrglobwb_variable_name] = 'groundwater_capillary_rise'

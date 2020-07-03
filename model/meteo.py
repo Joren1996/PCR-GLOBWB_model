@@ -80,6 +80,30 @@ class Meteo(object):
         self.tmpVarName      = 'temperature'
         self.refETPotVarName = 'evapotranspiration'
         self.read_meteo_variable_names(iniItems.meteoOptions)
+        
+        #%% ADDED BY JOREN: START
+        '''
+        Define variable names for read extensive meteo file.
+        '''
+        
+        self.includeRichards = False
+        if "includeRichards" in list(iniItems.landSurfaceOptions.keys()):
+            self.includeRichards = bool(iniItems.landSurfaceOptions['includeRichards'])
+        if self.includeRichards:
+            logger.info('Initialising Meteo Data for Richards Model')
+                
+# =============================================================================
+#         self.cloudFileNC = iniItems.meteoOptions['cloudcoverNC']
+#         self.radFileNC = iniItems.meteoOptions['radiationNC']
+#         self.vapFileNC = iniItems.meteoOptions['vaporNC']
+#         self.sunFracTBL = iniItems.meteoOptions['sunhoursTable']
+# =============================================================================
+            self.cloudFileNC = vos.getFullPath(iniItems.meteoOptions['cloudcoverNC'], self.inputDir)
+            self.radFileNC = vos.getFullPath(iniItems.meteoOptions['radiationNC'], self.inputDir)
+            self.vapFileNC = vos.getFullPath(iniItems.meteoOptions['vaporNC'], self.inputDir)
+            self.sunFracTBL = vos.getFullPath(iniItems.meteoOptions['sunhoursTable'], self.inputDir)
+                
+        #%% ADDED BY JOREN: STOP
 
         # daily time step
         self.usingDailyTimeStepForcingData = False
@@ -353,6 +377,57 @@ class Meteo(object):
                  pcr.areaaverage(factor, self.meteoDownscaleIds)
         factor = pcr.cover(factor, 1.0)
         self.referencePotET = pcr.max(0.0, factor * self.referencePotET)
+        
+        
+    #%% ADDED BY JOREN: START
+                        
+    def readExtensiveMeteo(self, currTimeStep):
+        logger.info('Reading the Data for Richards Model')
+# =============================================================================
+#         method_for_time_index = None
+#         self.precipitation = vos.netcdf2PCRobjClone(\
+#                                       self.preFileNC, self.preVarName,\
+#                                       str(currTimeStep.fulldate), 
+#                                       useDoy = method_for_time_index,
+#                                       cloneMapFileName = self.cloneMap,\
+#                                       LatitudeLongitude = True)
+# =============================================================================
+        
+        self.cloudCover = vos.netcdf2PCRobjClone(\
+                                 self.cloudFileNC,'cld',\
+                                 str(currTimeStep.fulldate), 
+                                 useDoy = None,
+                                  cloneMapFileName=self.cloneMap,\
+                                  LatitudeLongitude = True)/pcr.scalar(100)#,specificFillValue = -999.)/pcr.scalar(100)
+                                  
+        self.radiation =  vos.netcdf2PCRobjClone(\
+                                 self.radFileNC,'RSW',\
+                                 str(currTimeStep.fulldate), 
+                                 useDoy = "month",
+                                 cloneMapFileName=self.cloneMap,\
+                                  LatitudeLongitude = True)#,specificFillValue = -999.)
+    
+        self.vaporPressure = vos.netcdf2PCRobjClone(\
+                                 self.vapFileNC,'vap',\
+                                 str(currTimeStep.fulldate), 
+                                 useDoy = None,
+                                  cloneMapFileName=self.cloneMap,\
+                                  LatitudeLongitude = True)/pcr.scalar(10)#,specificFillValue = -999.)
+    
+        #-vapour pressure, used to return atmospheric emissivity [-]                          
+        self.atmosEmis= pcr.scalar(1.0) #pcr.min(1.,(0.53+0.0065*(self.vaporPressure)**0.5)*(1.+0.4*self.cloudCover))
+        cld1= pcr.roundoff(10*self.cloudCover+0.5)
+        cld0= cld1-1
+        sun0= pcr.lookupscalar(self.sunFracTBL, cld0)
+        deltaSun= (pcr.lookupscalar(self.sunFracTBL,cld1)-sun0)/(cld1-cld0)
+        sunFrac= sun0+(10*self.cloudCover-cld0)*deltaSun
+        self.radCon=0.25
+        self.radSlope=0.5
+        radFrac= self.radCon+self.radSlope*sunFrac
+        self.rsw= radFrac*self.radiation
+        #self.rsw=self.radiation
+        
+    #%% ADDED BY JOREN: STOP
 
     def read_forcings(self,currTimeStep):
 
@@ -402,6 +477,10 @@ class Meteo(object):
         if self.usingDailyTimeStepForcingData:
             self.precipitation = pcr.rounddown(self.precipitation*100000.)/100000.
 
+        #%% ADDED BY JOREN: START
+        if self.includeRichards:
+            self.readExtensiveMeteo(currTimeStep) 
+        #%% ADDED BY JOREN: STOP
         
         # method for finding time index in the temperature netdf file:
         # - the default one
