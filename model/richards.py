@@ -75,6 +75,11 @@ def initialiseRichards(self):
         z=np.zeros(self.nCells)
         for i in range(len(dz[:,0])):
             z=np.vstack((z,dz[:i+1,:].sum(axis=0)))
+        
+        msg='Using layerFactorRichards'
+        logger.info(msg)
+        msg='number of layer: {}'.format(len(dz[:,0]))
+        logger.info(msg)
     
     else:
         BoundUpp=np.argmax((self.layerBoundariesRichards>float(np.nanmin(dzUpp_numpy))) & (self.layerBoundariesRichards<float(np.nanmax(dzUpp_numpy)))) #Index were boundary of the upper layer is.
@@ -104,6 +109,12 @@ def initialiseRichards(self):
                 i=1
             self.layerfractions[i, j,:]=dz[j,:]/dz_pcr[i,:]
         self.layerFactorRichards=BoundLow-BoundUpp #Number of layers in which the lowest PCR-GlobWB layer is divided.
+        
+        msg='Using layerBoundariesRichards'
+        logger.info(msg)
+        msg='number of layer: {}'.format(len(dz[:,0]))
+        logger.info(msg)
+        
         #ADDED FOR MULTIPLE LAYERS: STOP
     
     #Shape of the arrays (axis=0 is soil layers, axis=1 is number of cells.)
@@ -309,9 +320,48 @@ def runRichards(self, meteo, groundwater, currTimeStep):
         
     S0=S0*(1-alpha[nanindexUpp==False])*24*3600 #[J/m^2]; Incoming short wave solar radiation in a day.
     
-    #plantevap=np.vstack((actTranspiLow_numpy[nanindexUpp==False], actTranspiUpp_numpy[nanindexUpp==False]+actBareSoilEvap_numpy[nanindexUpp==False]))
-    #plantevap=np.array([np.dot(self.layerfractions[:,:,i].T, plantevap[:,i]) for i in range(n1[1])]).T #[m]; Evaporation per layer
+    
+    #Richards Equation Input
+    storTot_old=np.array([np.dot(self.layerfractions[:,:,i]>0, self.storTotRich[:,i]) for i in range(self.nCells)]).T
+    storTot_old_real=np.vstack((storLow_numpy, storUpp_numpy))
+    diff=storTot_old_real-storTot_old #Check if there is a difference the input from PCR-GlobWB and my input. Sometimes there is a small change--> is water extracted somewhere else?
+    diff=np.array([np.dot(self.layerfractions[:,:,i].T, diff[:,i]) for i in range(self.nCells)]).T
+    
+    #Correct for possible different initial conditions.
+    self.storTotRich+=diff #Difference is added, to correct for this.
+    
+    #Correct for empty layers.            
+    no_stor=self.storTotRich[:, nanindexUpp==False]<0
+    if np.array(no_stor).any():
+        msg='Start storage is empty in some cells!'
+        logger.warning(msg)
+        diff=-self.storTotRich[:, nanindexUpp==False]*no_stor
+        diff=diff.sum(axis=0)
+        self.storTotRich[:, nanindexUpp==False][no_stor]=0
+        j=1
+        no_stor=no_stor.sum(axis=0)>0
+        while np.array(diff>0).any():
+            if j>n[0]:
+                msg='Layers are completely empty!!!!'
+                logger.warning(msg)
+                diff=0
+            else:
+                self.storTotRich[:, nanindexUpp==False][-j,no_stor]-=diff[no_stor]
+                no_stor=self.storTotRich[:, nanindexUpp==False][-j,:]<0
+                if np.array(no_stor).any():
+                    diff=-self.storTotRich[:, nanindexUpp==False][-j,:]*no_stor
+                    self.storTotRich[:, nanindexUpp==False][-j,no_stor]=0
+                    j+=1
+                else: 
+                    diff=0
+    
+    #Evaporation
     plantevap=np.vstack((actTranspiLow_numpy, actTranspiUpp_numpy+actBareSoilEvap_numpy))
+    if np.array(plantevap>storTot_old_real).any(): #Check if evaporation is more than available water.
+        msg='Too much evaporation!'
+        logger.warning(msg)
+        plantevap[plantevap>storTot_old_real]-=plantevap[plantevap>storTot_old_real]-storTot_old_real[plantevap>storTot_old_real] #Decrease evaporation.
+    
     plantevap=np.array([np.dot(self.layerfractions[:,:,i].T, plantevap[:,i]) for i in range(self.nCells)]).T #[m]; Evaporation per layer
     plantevap=plantevap[:,nanindexUpp==False]
     
@@ -327,33 +377,32 @@ def runRichards(self, meteo, groundwater, currTimeStep):
     LE=np.zeros((len(SW_fractions), sum(nanindexUpp==False))) #[J/m^2]; Latent Heat Flux.
     
     #Add a daily cycle to climatological input.
-    S0_3H=S0*SW_fractions 
-    Tair_3H=Tair+Tair_list.T
-    ETpm_3H=ETpm*SW_fractions
+    S0_3H=S0*SW_fractions #3 hourly incoming shortwave
+    Tair_3H=Tair+Tair_list.T #3 hourly air temperature
+    ETpm_3H=ETpm*SW_fractions #3 hourly latent heat
     
-    #Richards Equation Input
-    storTot_old=np.array([np.dot(self.layerfractions[:,:,i]>0, self.storTotRich[:,i]) for i in range(self.nCells)]).T
-    storTot_old_real=np.vstack((storLow_numpy, storUpp_numpy))
-    diff=storTot_old_real-storTot_old #Check if there is a difference the input from PCR-GlobWB and my input. Sometimes there is a small change--> is water extracted somewhere else?
-    diff=np.array([np.dot(self.layerfractions[:,:,i].T, diff[:,i]) for i in range(self.nCells)]).T
     
-    #Correct for possible different initial conditions.
-    self.storTotRich+=diff #Difference is added, to correct for this.
     theta0=self.storTotRich[:,nanindexUpp==False]/dz[:,nanindexUpp==False] #[-]; Soil moisture content.
     theta0=theta0+thetaR[:, nanindexUpp==False]
     
     #Correct for possible oversaturated layers.
-    excess=np.zeros(n1) #[m]; spill from oversaturated layers. Some layers were initially oversaturated due to the addition of diff.
-    oversaturated=theta0>thetaS[:, nanindexUpp==False] #Index of oversaturated layers.
-    excess[oversaturated]+=self.storTotRich[:, nanindexUpp==False][oversaturated]-(thetaS[:, nanindexUpp==False][oversaturated]-thetaR[:, nanindexUpp==False][oversaturated])*dz[:, nanindexUpp==False][oversaturated]
-    self.storTotRich[:, nanindexUpp==False][oversaturated]=(thetaS[:, nanindexUpp==False][oversaturated]-thetaR[:, nanindexUpp==False][oversaturated])*dz[:, nanindexUpp==False][oversaturated]
-    theta0[oversaturated]=thetaS[:, nanindexUpp==False][oversaturated]
+    excess=np.zeros(n) #[m]; spill from oversaturated layers. Some layers were initially oversaturated due to the addition of diff.
+
+    #New Fix
+    theta0=np.insert(theta0, nanindex, np.nan, axis=1)
+    oversaturated=theta0>thetaS #Check if there is too much water in some cells!
+    watercontent=(theta0-thetaR)*dz
+    theta0[oversaturated]=thetaS[oversaturated]
+    self.storTotRich=(theta0-thetaR)*dz
+    excess[oversaturated]+=watercontent[oversaturated]-self.storTotRich[oversaturated]
+    theta0=theta0[:,nanindexUpp==False]
+    
     
     qTop=-infiltration_numpy #[m/day] Infiltration flux.
     
-    #Define empty arrays
-    interflow=np.zeros((int(n1[0]/2),n1[1])) #[m]
-    satexcess=np.zeros((int(n1[0]/2),n1[1])) #[m]
+    #Define empty arrays for interflow and saturation excess
+    interflow=np.zeros((int(n[0]/2),n1[1])) #[m]
+    satexcess=np.zeros((int(n[0]/2),n1[1])) #[m]
         
     theta_run=theta0 #Soil moisture content for during the model, to keep the initial conditions for comparison.
         
@@ -373,7 +422,7 @@ def runRichards(self, meteo, groundwater, currTimeStep):
     qOutLow=q[0,:] #[m/day]; Outflow lower layer at specific time steps (check for percLow)
     psi0=psi0.reshape(n1)
     
-    i_last=0 #Index needed for the second loop.
+    i_last=0 #Index of last time the Richards model was run, needed for the second loop.
     
     for i in range(len(SW_fractions)): #Loop for Energy Balance
         Ts[i,:]=optimize.newton(func=radiation_f2, x0=Ts[i,:], fprime=radiation_deriv2, args=(dT, Tair_3H[i,:], T0[-1,:], RH, cloudCover, S0_3H[i,:], ra, rho_a, cp, dt_short, dz[-1, nanindexUpp==False], theta_run, thetaS[:, nanindexUpp==False], l_sat[:, nanindexUpp==False], l_dry[:, nanindexUpp==False], ETpm_3H[i,:]), maxiter=150)
@@ -397,9 +446,50 @@ def runRichards(self, meteo, groundwater, currTimeStep):
             T0[-1, :]=Ts[:i,:].mean(axis=0) #Give the skin temperature as input for upper layer.
             
             #Subtract Evaporation.
-            theta_top_new=(self.storTotRich[:, nanindexUpp==False]-plantevap*SW_fractions[i_last:i+1].sum())/dz[:,nanindexUpp==False]
-            i_last=i+1
+            #theta_top_new=(self.storTotRich[:, nanindexUpp==False]-plantevap*SW_fractions[i_last:i+1].sum())/dz[:,nanindexUpp==False]
+            #%% WEIRD ERROR
+            
+            theta_top_new=self.storTotRich[:, nanindexUpp==False]-plantevap*SW_fractions[i_last:i+1].sum()
+            
+            
+            #Check if storage is not negative due to evaporation and translate this to other layers.
+            no_stor=theta_top_new<0
+            if np.array(no_stor).any():
+                msg='Layers are empty in some cells!'
+                logger.warning(msg)
+                diff=-theta_top_new*no_stor
+                diff=diff.sum(axis=0)
+                theta_top_new[no_stor]=0
+                j=1
+                no_stor=no_stor.sum(axis=0)>0
+                while np.array(diff>0).any():
+                    if j>n[0]:
+                        msg='Layers are completely empty!!!!'
+                        logger.warning(msg)
+                        diff=0
+                    else:
+                        theta_top_new[-j,no_stor]-=diff[no_stor]
+                        no_stor=theta_top_new[-j,:]<0
+                        if np.array(no_stor).any():
+                            diff=-theta_top_new[-j,:]*no_stor
+                            theta_top_new[-j,no_stor]=0
+                            j+=1
+                        else: 
+                            diff=0
+
+            i_last=i+1 #Update index of Richards run.
+            
+            theta_top_new=theta_top_new/dz[:,nanindexUpp==False]
             theta_top_new=theta_top_new+thetaR[:, nanindexUpp==False] #[-]; New soil moisture content
+            
+            psi0=inv_thetaFun(theta_top_new, p[:,nanindexUpp==False]) #[m]; compute matrix potential
+            
+            
+            #Check flux beforehand
+            q0 =fluxModel2(psi0,n1,p[:,nanindexUpp==False],qTop[nanindexUpp==False],qBot,psiTop[nanindexUpp==False],psiBot[nanindexUpp==False], z[:,nanindexUpp==False], T0); #[m/day]; Compute the new fluxes.
+            #Make a list of the percolation (to check the waterbalance)
+            qOutUpp=np.vstack((qOutUpp, q0[self.layerFactorRichards,:]))
+            qOutLow=np.vstack((qOutLow, q0[0,:]))
             
             if self.numberOfCoresRichards>1:
             #Multicorerprocessing!
@@ -443,14 +533,18 @@ def runRichards(self, meteo, groundwater, currTimeStep):
             T0=T1
             
             
+            
             theta=np.insert(theta, nanindex, np.nan, axis=1)
             
+
             #check for oversaturation:
-            watercontent=theta[:,nanindexUpp==False]*dz[:,nanindexUpp==False]
-            oversaturated=watercontent>(thetaS[:,nanindexUpp==False]*dz[:,nanindexUpp==False])
-            excess[oversaturated]+=watercontent[oversaturated]-thetaS[:,nanindexUpp==False][oversaturated]*dz[:,nanindexUpp==False][oversaturated]
-            theta[:,nanindexUpp==False][oversaturated]=thetaS[:,nanindexUpp==False][oversaturated]
+            #New check:
+            oversaturated=theta>thetaS
+            watercontent=(theta-thetaR)*dz
+            theta[oversaturated]=thetaS[oversaturated]
             self.storTotRich=(theta-thetaR)*dz
+            excess[oversaturated]+=watercontent[oversaturated]-self.storTotRich[oversaturated]
+
             
             #Compute the new fluxes
             q =fluxModel2(psi,n1,p[:,nanindexUpp==False],qTop[nanindexUpp==False],qBot,psiTop[nanindexUpp==False],psiBot[nanindexUpp==False], z[:,nanindexUpp==False], T0); #[m/day]; Compute the new fluxes.
@@ -481,48 +575,23 @@ def runRichards(self, meteo, groundwater, currTimeStep):
     
     #Compute the percolation that must have taken place.
     percTot=np.zeros(n1)
-    percTot[-1,:]=-(watercontent0[-1,:]-watercontent[-1,:]-qTop[nanindexUpp==False]-excess[-1,:])
+    percTot[-1,:]=-(watercontent0[-1,:]-watercontent[-1,:]-qTop[nanindexUpp==False]-excess[:,nanindexUpp==False][-1,:])
     for layer in range(2, n1[0]+1):
-        percTot[-layer,:]=-(watercontent0[-layer,:]-watercontent[-layer,:]-percTot[-layer+1,:]-excess[-layer,:])
+        percTot[-layer,:]=-(watercontent0[-layer,:]-watercontent[-layer,:]-percTot[-layer+1,:]-excess[:,nanindexUpp==False][-layer,:])
     
     percUpp=percTot[self.layerFactorRichards,:]
-    percLow=percTot[0,:]
     
-    
-# =============================================================================
-#     #Weird Error: check if groundwater does not become empty..
-#     no_gw=storGroundwater[nanindexUpp==False]-percLow<0
-#     if no_gw.any():
-#         msg='Groundwater is empty in some cells!'
-#         logger.warning(msg)
-#         diff=percLow[no_gw]-storGroundwater[nanindexUpp==False][no_gw]
-#         percLow[no_gw]-=diff
-#         j=0
-#         while np.array(diff>0).any(): 
-#             self.storTotRich[j,nanindexUpp==False][no_gw]-=diff
-#             no_gw=self.storTotRich[j,nanindexUpp==False]<0
-#             if np.array(no_gw).any():
-#                 diff=-self.storTotRich[j,nanindexUpp==False][no_gw]
-#                 self.storTotRich[j,nanindexUpp==False][no_gw]=0
-#                 j+=1
-#             else: 
-#                 diff=0
-# =============================================================================
+    #percLow=percTot[0,:] #percLow is now taken from the total water balance, but this is also possible.
             
     percUpp=np.insert(percUpp, nanindex, np.nan)
-    percLow=np.insert(percLow, nanindex, np.nan)
+    #percLow=np.insert(percLow, nanindex, np.nan)
     
     #Compute saturation excess and infiltration.
     interflow=excess[:self.layerFactorRichards,:]
     satexcess=excess[self.layerFactorRichards:,:]
-    if self.layerFactorRichards>1:
-        interflow=interflow.sum(axis=0)
-    if (len(dz)-self.layerFactorRichards)>1:
-        satexcess=satexcess.sum(axis=0)
-    
-    interflow=np.insert(interflow, nanindex, np.nan)
-    satexcess=np.insert(satexcess, nanindex, np.nan)
-    #ADDED FOR FIXING RICHARDS: STOP
+
+    interflow=interflow.sum(axis=0)
+    satexcess=satexcess.sum(axis=0)
     
     #Translate the new storage to the two layer PCR_GlobWB storage
     storTot_new=np.array([np.dot(self.layerfractions[:,:,i]>0, self.storTotRich[:,i]) for i in range(self.nCells)]).T
@@ -532,9 +601,16 @@ def runRichards(self, meteo, groundwater, currTimeStep):
     #Check again if there is no oversaturation...
     oversaturated=storUpp_new>storCapUpp
     if oversaturated.any():
-        print('OVERSATURATED!')
-    satexcess[oversaturated]+=storUpp_new[oversaturated]-storCapUpp[oversaturated]
-    storUpp_new[oversaturated]=storCapUpp[oversaturated]
+        msg='OVERSATURATED!'
+        logger.warning(msg)
+        
+        satexcess[oversaturated]+=storUpp_new[oversaturated]-storCapUpp[oversaturated]
+        storUpp_new[oversaturated]=storCapUpp[oversaturated]
+    
+    #New percLow for Groundwater Error:
+    percLow=-(storUpp_numpy[nanindexUpp==False]+storLow_numpy[nanindexUpp==False]-storUpp_new[nanindexUpp==False]-storLow_new[nanindexUpp==False]-qTop[nanindexUpp==False]-ETpm-interflow[nanindexUpp==False]-satexcess[nanindexUpp==False])
+    percLow=np.insert(percLow, nanindex, np.nan)
+    
     
     #Translate the new temperature to the two layer PCR_GlobWB storage
     SoilTemp=np.array([np.dot(self.layerfractions[:,:,i], T1[:,i]) for i in range(self.nCells)]).T #Take the average over all layers in specific fractions for the temperature in both cells.
@@ -609,8 +685,11 @@ def runRichards(self, meteo, groundwater, currTimeStep):
 #     planttotal=np.sum(plantevap, axis=0)
 #     print(describe(ETpm.flatten()[nanindexUpp==False]-planttotal[nanindexUpp==False], nan_policy='omit'))
 #     
+# =============================================================================
+# =============================================================================
 #     #ADDED FOR FIXING RICHARDS
 #     print('Water Balance gap:')
+#     planttotal=np.sum(plantevap, axis=0)
 #     WB=storUpp_numpy.flatten()[nanindexUpp==False]+storLow_numpy.flatten()[nanindexUpp==False]-storUpp_new.flatten()[nanindexUpp==False]-storLow_new.flatten()[nanindexUpp==False]-qTop[nanindexUpp==False]-planttotal[nanindexUpp==False]+percLow.flatten()[nanindexUpp==False]-interflow.flatten()[nanindexUpp==False]-satexcess.flatten()[nanindexUpp==False]
 #     print(describe(WB,nan_policy='omit'))
 #     
@@ -621,7 +700,9 @@ def runRichards(self, meteo, groundwater, currTimeStep):
 #     print('Water Balance Low:')
 #     WB_Low=storLow_numpy.flatten()[nanindexUpp==False]-storLow_new.flatten()[nanindexUpp==False]-percUpp.flatten()[nanindexUpp==False]-plantevapLow.flatten()[nanindexUpp==False]+percLow.flatten()[nanindexUpp==False]-interflow.flatten()[nanindexUpp==False]
 #     print(describe(WB_Low,nan_policy='omit'))
-#     
+# =============================================================================
+    
+# =============================================================================
 #     print('StorCapUpp: exceeded?')
 #     SC_Upp=storUpp_new.flatten()[nanindexUpp==False]-storCapUpp[nanindexUpp==False]
 #     print(describe(SC_Upp,nan_policy='omit'))
@@ -630,19 +711,19 @@ def runRichards(self, meteo, groundwater, currTimeStep):
     #Check if the found percolation is physical.
     qOutUpp=qOutUpp[1:,:]
     qOutLow=qOutLow[1:,:]
-    tol=1e-6
+    tol=1e-5
     indexUpp=(percTot[self.layerFactorRichards,:]<=qOutUpp.max(axis=0)+tol)*(qOutUpp.min(axis=0)-tol<=percTot[self.layerFactorRichards,:])
     if (indexUpp==False).any():
-        msg='WB ERROR IN PERCOLATION UPP!'
-        logger.debug(msg)
+        msg='WB deviation in percUpp!'
+        logger.warning(msg)
         
-    indexLow=(qOutLow.min(axis=0)-tol<=percTot[0,:]) * (percTot[0,:]<=qOutLow.max(axis=0)+tol)
+    indexLow=(qOutLow.min(axis=0)-tol<=percLow.flatten()[nanindexUpp==False]) * (percLow.flatten()[nanindexUpp==False]<=qOutLow.max(axis=0)+tol)
     if (indexLow==False).any():
-        msg='WB ERROR IN PERCOLATION LOW!'
-        logger.debug(msg)
+        msg='WB deviation in percLow!'
+        logger.warning(msg)
     
     msg='PercUpp Correct:{}; PercLow Correct:{}'.format(np.sum(indexUpp), np.sum(indexLow))
-    logger.debug(msg)
+    logger.info(msg)
     
     percLow=-percLow
     percUpp=-percUpp
@@ -724,7 +805,6 @@ def RichardsModel_dz2(psi,t,n,p,qTop,qBot,psiTop,psiBot, z, T):
         KTop=KFun1(np.zeros(np.sum(flooded))+psiTop[flooded],p[n[0]-1, flooded], T[n[0]-1, flooded])
         q[n[0],flooded]=-KTop*((psiTop[flooded]-psi[n[0]-1,flooded])/(dz[-1,flooded]*2)+1)
         q[n[0],np.isfinite(qTop)]=qTop[np.isfinite(qTop)]
-        #print(q[n[0], :])
     else:
         q[n[0],:]=qTop
 
@@ -912,7 +992,6 @@ def ThermalConduct(theta_top, thetaS, l_sat, l_dry, T):
         l_ice=2.25 #[W/m/K]
         return (l_ice-l_dry)*(theta_top/thetaS)+l_dry
     Ks=(l_sat-l_dry)*(theta_top/thetaS)+l_dry
-    #print(Ks)
     return Ks
 
 ThermalConduct=np.vectorize(ThermalConduct, otypes=[float])
