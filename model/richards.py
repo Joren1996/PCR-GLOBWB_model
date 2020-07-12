@@ -78,7 +78,7 @@ def initialiseRichards(self):
         
         msg='Using layerFactorRichards'
         logger.info(msg)
-        msg='number of layer: {}'.format(len(dz[:,0]))
+        msg='number of layers: {}'.format(len(dz[:,0]))
         logger.info(msg)
     
     else:
@@ -112,7 +112,7 @@ def initialiseRichards(self):
         
         msg='Using layerBoundariesRichards'
         logger.info(msg)
-        msg='number of layer: {}'.format(len(dz[:,0]))
+        msg='number of layers: {}'.format(len(dz[:,0]))
         logger.info(msg)
         
         #ADDED FOR MULTIPLE LAYERS: STOP
@@ -408,7 +408,7 @@ def runRichards(self, meteo, groundwater, currTimeStep):
         
     #Heat Function Input
     T0=self.soiltemperature[:,nanindexUpp==False, -1].reshape(n1) #[K]; Initial soil temperature
-    
+    T_avg=T0
     
     #%% RUN MODEL
     '''
@@ -442,8 +442,6 @@ def runRichards(self, meteo, groundwater, currTimeStep):
             msg='Run model at t={}h'.format(int((i+1)*dt_short))
             logger.info(msg)
             
-            #Added for 3H
-            T0[-1, :]=Ts[:i,:].mean(axis=0) #Give the skin temperature as input for upper layer.
             
             #Subtract Evaporation.
             #theta_top_new=(self.storTotRich[:, nanindexUpp==False]-plantevap*SW_fractions[i_last:i+1].sum())/dz[:,nanindexUpp==False]
@@ -523,16 +521,28 @@ def runRichards(self, meteo, groundwater, currTimeStep):
                 
             theta=thetaFun(psi, p[:,nanindexUpp==False]) #[-]; Compute new soil moisture content.
             
+            #Compute the new fluxes
+            q =fluxModel2(psi,n1,p[:,nanindexUpp==False],qTop[nanindexUpp==False],qBot,psiTop[nanindexUpp==False],psiBot[nanindexUpp==False], z[:,nanindexUpp==False], T0); #[m/day]; Compute the new fluxes.
+            #Make a list of the percolation (to check the waterbalance)
+            qOutUpp=np.vstack((qOutUpp, q[self.layerFactorRichards,:]))
+            qOutLow=np.vstack((qOutLow, q[0,:]))
+            
+            
             '''
             HEAT EQUATION: can be placed in EB loop, but it makes it a little slower.
             '''
-    
+            
+            #Added for 3H
+            #T0[-1, :]=np.nanmean(Ts[i_last:i,:], axis=0) #Give the skin temperature as input for upper layer.
+            T0[-1, :]=Ts[i,:]
             T0=T0.flatten() #Input data odeint has to be flattened.
             T1 = odeint(heatFun3,T0,t,args=(q, z[:,nanindexUpp==False], cw, cs, theta, theta_soil[:, nanindexUpp==False], l_sat[:,nanindexUpp==False], l_dry[:,nanindexUpp==False], n1, dt), mxstep=1000)
+            #T1 = odeint(heatFun4,T0,t,args=(q, z[:,nanindexUpp==False], cw, cs, theta, theta_soil[:, nanindexUpp==False], l_sat[:,nanindexUpp==False], l_dry[:,nanindexUpp==False], n1, dt, Ts[i_last:i,:].mean(axis=0)), mxstep=1000)
             T1=T1[-1,:].reshape(n1)
             T0=T1
+            T_avg=np.dstack((T_avg, T1))
             
-            
+            #T_avg=np.dstack((T_avg, T0))
             
             theta=np.insert(theta, nanindex, np.nan, axis=1)
             
@@ -545,12 +555,7 @@ def runRichards(self, meteo, groundwater, currTimeStep):
             self.storTotRich=(theta-thetaR)*dz
             excess[oversaturated]+=watercontent[oversaturated]-self.storTotRich[oversaturated]
 
-            
-            #Compute the new fluxes
-            q =fluxModel2(psi,n1,p[:,nanindexUpp==False],qTop[nanindexUpp==False],qBot,psiTop[nanindexUpp==False],psiBot[nanindexUpp==False], z[:,nanindexUpp==False], T0); #[m/day]; Compute the new fluxes.
-            #Make a list of the percolation (to check the waterbalance)
-            qOutUpp=np.vstack((qOutUpp, q[self.layerFactorRichards,:]))
-            qOutLow=np.vstack((qOutLow, q[0,:]))
+
             
             
             #New input for the next loop.
@@ -563,6 +568,7 @@ def runRichards(self, meteo, groundwater, currTimeStep):
     tempDeficit_6PM=Ts[-3,:]-Tair_3H[-3,:]
     
     T1=np.insert(T1, nanindex, np.nan, axis=1)
+    T_avg=np.insert(T_avg, nanindex, np.nan, axis=1)
      
     
     '''
@@ -613,7 +619,9 @@ def runRichards(self, meteo, groundwater, currTimeStep):
     
     
     #Translate the new temperature to the two layer PCR_GlobWB storage
-    SoilTemp=np.array([np.dot(self.layerfractions[:,:,i], T1[:,i]) for i in range(self.nCells)]).T #Take the average over all layers in specific fractions for the temperature in both cells.
+    #SoilTemp=np.array([np.dot(self.layerfractions[:,:,i], T1[:,i]) for i in range(self.nCells)]).T #Take the average over all layers in specific fractions for the temperature in both cells.
+    T_avg=np.nanmean(T_avg,axis=2)
+    SoilTemp=np.array([np.dot(self.layerfractions[:,:,i], T_avg[:,i]) for i in range(self.nCells)]).T #Take the average over all layers in specific fractions for the temperature in both cells.
     SoilTempUpp=SoilTemp[1,:]
     SoilTempLow=SoilTemp[0,:]
 
@@ -736,17 +744,17 @@ def runRichards(self, meteo, groundwater, currTimeStep):
     self.percUpp=pcr.numpy2pcr(pcr.Scalar, np.asarray(percUpp.tolist()), np.nan)
     self.percLow=pcr.numpy2pcr(pcr.Scalar, np.asarray(percLow.tolist()), np.nan)
 
-    self.soilTempUpp=pcr.numpy2pcr(pcr.Scalar, SoilTempUpp, np.nan)
-    self.soilTempLow=pcr.numpy2pcr(pcr.Scalar, SoilTempLow, np.nan)
-    self.tempDeficit_6AM=pcr.numpy2pcr(pcr.Scalar, tempDeficit_6AM, np.nan)
-    self.tempDeficit_6PM=pcr.numpy2pcr(pcr.Scalar, tempDeficit_6PM, np.nan)
+    self.soilTempUpp=pcr.numpy2pcr(pcr.Scalar, np.asarray(SoilTempUpp.tolist()), np.nan)
+    self.soilTempLow=pcr.numpy2pcr(pcr.Scalar, np.asarray(SoilTempLow.tolist()), np.nan)
+    self.tempDeficit_6AM=pcr.numpy2pcr(pcr.Scalar, np.asarray(tempDeficit_6AM.tolist()), np.nan)
+    self.tempDeficit_6PM=pcr.numpy2pcr(pcr.Scalar, np.asarray(tempDeficit_6PM.tolist()), np.nan)
     
-    self.longWaveRad=pcr.numpy2pcr(pcr.Scalar, Ln, np.nan)
-    self.netSW=pcr.numpy2pcr(pcr.Scalar, Sn, np.nan)
-    self.netRad=pcr.numpy2pcr(pcr.Scalar, Rn, np.nan)
-    self.latentHF=pcr.numpy2pcr(pcr.Scalar, LE, np.nan)
-    self.sensibleHF=pcr.numpy2pcr(pcr.Scalar, H, np.nan)
-    self.groundHF=pcr.numpy2pcr(pcr.Scalar, G, np.nan)
+    self.longWaveRad=pcr.numpy2pcr(pcr.Scalar, np.asarray(Ln.tolist()), np.nan)
+    self.netSW=pcr.numpy2pcr(pcr.Scalar, np.asarray(Sn.tolist()), np.nan)
+    self.netRad=pcr.numpy2pcr(pcr.Scalar, np.asarray(Rn.tolist()), np.nan)
+    self.latentHF=pcr.numpy2pcr(pcr.Scalar, np.asarray(LE.tolist()), np.nan)
+    self.sensibleHF=pcr.numpy2pcr(pcr.Scalar, np.asarray(H.tolist()), np.nan)
+    self.groundHF=pcr.numpy2pcr(pcr.Scalar, np.asarray(G.tolist()), np.nan)
     self.soiltemperature=np.expand_dims(T1, axis=2)
     self.actTranspiUpp=pcr.numpy2pcr(pcr.Scalar, np.asarray(plantevapUpp.tolist()), np.nan)
     self.actTranspiLow=pcr.numpy2pcr(pcr.Scalar, np.asarray(plantevapLow.tolist()), np.nan)
@@ -843,9 +851,9 @@ def RichardsModel_dz2(psi,t,n,p,qTop,qBot,psiTop,psiBot, z, T):
 
 def heatFun3(T, t, q, z, Cw, Cs, thetaW, thetaS, l_sat, l_dry, n, dt):
     T = T.reshape(n)
-    l=ThermalConduct(thetaW[1:-1], thetaS[1:-1], l_sat[1:-1], l_dry[1:-1], T[1:-1])
+    l=ThermalConduct(thetaW[1:-1,:], thetaS[1:-1,:], l_sat[1:-1,:], l_dry[1:-1,:], T[1:-1,:])
     l*=dt*3600
-    heat_cap=heatcapacity1(thetaW[1:-1], thetaS[1:-1], T[1:-1])
+    heat_cap=heatcapacity1(thetaW[1:-1,:], thetaS[1:-1,:], T[1:-1,:])
 
     zMid = np.hstack(z[:-1, :] + (z[1::,:]-z[:-1,:])/2).reshape(n) #Compute midpoint of each cell
     dz = np.abs(np.hstack([zMid[0,:]-z[0,:], (zMid[1::,:]-zMid[:-1,:]).flatten(), z[-1,:]-zMid[-1,:]])).reshape((n[0]+1,n[1])) #Compute distance between midpoint (location of fluxes)
@@ -856,11 +864,11 @@ def heatFun3(T, t, q, z, Cw, Cs, thetaW, thetaS, l_sat, l_dry, n, dt):
     E = Ew + Es
     i=np.arange(1,n[0]-1)
     
-    deltaT = T[i+1]-2*T[i]+T[i-1]
-    deltaE = 0.5*(Ew[i-1]-Ew[i])/dz[i-1] + 0.5*(Ew[i]-Ew[i+1])/dz[i]
+    deltaT = T[i+1,:]-2*T[i,:]+T[i-1,:]
+    deltaE = 0.5*(Ew[i-1,:]-Ew[i,:])/dz[i-1,:] + 0.5*(Ew[i,:]-Ew[i+1,:])/dz[i,:]
     
-    conduc = deltaT/(dz[i-1]*dz[i]) *l/heat_cap #Conduction
-    convec = deltaE * -q[i]/heat_cap #Convection
+    conduc = deltaT/(dz[i-1,:]*dz[i,:]) *l/heat_cap #Conduction
+    convec = deltaE * -q[i,:]/heat_cap #Convection
     dTdt = np.vstack([conduc-convec,np.zeros(n[1])]).flatten()
     dTdt = np.hstack([dTdt[:n[1]], dTdt]) #Add this give the lower layer the same derivative as the layer above it!
     return dTdt
@@ -1073,8 +1081,9 @@ def radiation_deriv2(Ts, dT, T_air, T_soil, RH, cloudfraction, Sin, ra, rho_a, c
     return (fdT-f)/(2*dT)
 
 
-#FOR FUTURE USE: A SIMPLE SNOWCOVER MODEL: A FIRST START. IMPLEMENTED IN FullModel_Raam.py
-    
+'''
+FOR FUTURE USE: A SIMPLE SNOWCOVER MODEL: A FIRST START. IMPLEMENTED IN FullModel_Raam.py
+''' 
 # =============================================================================
 # #Snow Cover
 #     if Snow_Cover.any():
@@ -1138,4 +1147,36 @@ def radiation_deriv2(Ts, dT, T_air, T_soil, RH, cloudfraction, Sin, ra, rho_a, c
 #     return Tnew
 # 
 # snow_temperature=np.vectorize(snow_temperature, otypes=[float], cache=False)
+# =============================================================================
+
+'''
+FOR FUTURE USE: FIRST START WITH NEW HEAT FUNCTION.
+'''
+# =============================================================================
+# def heatFun4(T, t, q, z, Cw, Cs, thetaW, thetaS, l_sat, l_dry, n, dt, Ts):
+#     T = T.reshape(n)
+#     T=np.vstack((T, Ts))
+#     l=ThermalConduct(thetaW[1:,:], thetaS[1:,:], l_sat[1:,:], l_dry[1:,:], T[1:-1,:])
+#     l*=dt*3600
+#     heat_cap=heatcapacity1(thetaW[1:,:], thetaS[1:,:], T[1:,:])
+# 
+#     zMid = np.hstack(z[:-1, :] + (z[1::,:]-z[:-1,:])/2).reshape(n) #Compute midpoint of each cell
+#     dz = np.abs(np.hstack([zMid[0,:]-z[0,:], (zMid[1::,:]-zMid[:-1,:]).flatten(), z[-1,:]-zMid[-1,:]])).reshape((n[0]+1,n[1])) #Compute distance between midpoint (location of fluxes)
+#     
+#     
+#     Ew = (T[:-1,:])*Cw*thetaW
+#     Es = (T[:-1,:])*Cs*thetaS
+#     Es=np.vstack((Es, Ts*Cs*thetaS[-1,:]))
+#     Ew=np.vstack((Ew, Ts*Cw*thetaW[-1,:]))
+#     E = Ew + Es
+#     i=np.arange(1,n[0])
+#     
+#     deltaT = T[i+1,:]-2*T[i,:]+T[i-1,:]
+#     deltaE = 0.5*(Ew[i-1,:]-Ew[i,:])/dz[i-1,:] + 0.5*(Ew[i,:]-Ew[i+1,:])/dz[i,:]
+#     
+#     conduc = deltaT/(dz[i-1,:]*dz[i,:]) *l/heat_cap #Conduction
+#     convec = deltaE * -q[i,:]/heat_cap #Convection
+#     dTdt = np.vstack([conduc-convec]).flatten()
+#     dTdt = np.hstack([dTdt[:n[1]], dTdt]) #Add this give the lower layer the same derivative as the layer above it!
+#     return dTdt
 # =============================================================================

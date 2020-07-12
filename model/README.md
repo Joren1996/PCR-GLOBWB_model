@@ -141,7 +141,7 @@ This part focusses on the changes with respect to the normal `landSurface.py`.
    Runs the actual model.
    - In the section *CONVERSION*, the relevant input is converted to *numpy*.
    - *INITIALISATION*: Data is flattened, empty arrays are defined. Some cells in the model have nan values, since they might fall outside the basin. The model does not work if these are incorporated. Therefore, `nanindexUpp` is defined to eliminated these. However, the main model still uses these cells and therefore `nanindex` is used to insert nanvalues in these cells in the *POSTPROCESSING* section. There is a check for potential differences in storage in the PCR-GlobWB model and the Richards model. Furthermore, evapotranspiration can be reduced if it is more than what is available in the storage layers in the model. 
-   - *RUN THE MODEL*: The actual model is run and it exists of two loops: one for the energy balance (predefined to run in steps of 3 hours) and one for the Richards model in larger timesteps. More details on how the energy balance, Richards model and soil heat function work in their specific sections. There are here some checks implemented, so that the layers cannot become over and undersaturated while running the model.
+   - *RUN THE MODEL*: The actual model is run and it exists of two loops: one for the energy balance (predefined to run in steps of 3 hours) and one for the Richards model in larger timesteps. More details on how the energy balance, Richards model and soil heat function work in their specific sections. There are here some checks implemented, so that the layers cannot become over and undersaturated while running the model. Furthermore, evaporation is subtracted from the layers. If too much is evaporated from a specific layer so that it becomes empty, it is transferred to other layers (preferentially the top layers).
    - *POSTPROCESSING*: The water balance is closed by computing the outgoing percolation. Note that it is first negative, since that is how the model is defined, but later made positive for the PCR-GlobWB model. Futhermore, NaN-values are inserted, the arrays are shaped into the proper dimensions and sizes. In the end, relevant variables are coupled to the landCover object and send to the main model.
    - In the section *CONVERSION TO PCRASTER*, the relevant output is converted to *pcraster*.
  
@@ -151,7 +151,9 @@ The smaller functions will be explained in the sections on the Richards model, h
 
 - Make the model usable for the 3 layer configuration in PCR-GlobWB.
 - Make the multiple layers completely flexible (so that the boundaries of the cells do not have to be included in the *ini*-file).
-- The way the evaporation for two layers from PCR-GlobWB is divided over the multilayer model could be improved. Now it is proportional to the size, but layers close to the surface receive more (especially bare soil evaporation).
+- The way the evaporation for two layers from PCR-GlobWB is divided over the multilayer model could be improved. Now it is proportional to the size, but layers close to the surface receive more (especially bare soil evaporation). Furthermore, evaporation could be divided better over the layers if one layer gets empty. Now it is moved to layers closer to the surface.
+- Evapotranspiration is sometimes larger than total storage. Now, this is reduced, but this should already be fixed in the main PCR-GlobWB model.
+- When returning the *numpy* arrays to *pcraster*, it generates random data if I do not convert it back to a list first. Probably the arrays are masked and this can be removed.
 
 ### Unsaturated Zone: Richards Model
 
@@ -292,6 +294,7 @@ List of the most important variables.
 | `Tair_3H` | [K]  |Array: as `Tair` but with daily cycle.|
 | `ETpm_3H` | [m]  |Array: as `ETpm` but with daily cycle.| 
 | `T0` | [K]  |Array: intial soil temperature.|
+| `T_avg` | [K]  |Array: Used to return back the average soil temperature for the day.|
 | `theta_run` |  |Array: soil moisture for during the computation.| 
 | `psi0` | [m] |Array: matrix potential for during the computation.|
 | `theta_top_new` | [m] |Array: soil moisture content for during the computation.|
